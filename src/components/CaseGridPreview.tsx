@@ -2,12 +2,27 @@
 
 import { useMemo } from "react";
 import type { FlowResult } from "@/lib/flow";
-import { buildCaseGrid, levelFill } from "@/lib/export/grid";
+import { buildCaseGrid, levelFill, mergeSpans } from "@/lib/export/grid";
 import { fmtDate, fmtTime } from "@/lib/client";
 
 /** พรีวิวไฟล์รูปแบบ 3.case เหมือนเปิดใน Excel */
-export function CaseGridPreview({ flow, caseNo, mask, era, limit = 200 }: { flow: FlowResult; caseNo: string; mask: boolean; era: "BE" | "CE"; limit?: number }) {
+export function CaseGridPreview({
+  flow,
+  caseNo,
+  mask,
+  era,
+  merge = false,
+  limit = 200,
+}: {
+  flow: FlowResult;
+  caseNo: string;
+  mask: boolean;
+  era: "BE" | "CE";
+  merge?: boolean;
+  limit?: number;
+}) {
   const grid = useMemo(() => buildCaseGrid(flow, { mask }), [flow, mask]);
+  const spans = useMemo(() => (merge ? mergeSpans(flow.chains.slice(0, limit)) : null), [merge, flow, limit]);
   const cols = grid.columns.length;
   const letters = useMemo(
     () =>
@@ -71,6 +86,8 @@ export function CaseGridPreview({ flow, caseNo, mask, era, limit = 200 }: { flow
               {row.map((g, i) => {
                 if (!g) return <td key={i} className="!border-transparent" />;
                 const colored = g.kind === "bank" || g.kind === "account";
+                const span = colored && spans ? spans.get(`${r}:${g.level}`) : undefined;
+                if (span === 0) return null;
                 const v =
                   g.kind === "date"
                     ? g.value
@@ -88,7 +105,8 @@ export function CaseGridPreview({ flow, caseNo, mask, era, limit = 200 }: { flow
                 return (
                   <td
                     key={i}
-                    className={g.kind === "amount" || g.kind === "time" || g.kind === "date" ? "text-right" : ""}
+                    rowSpan={span && span > 1 ? span : undefined}
+                    className={span && span > 1 ? "text-center align-middle" : g.kind === "amount" || g.kind === "time" || g.kind === "date" ? "text-right" : ""}
                     style={colored ? { background: `#${levelFill(g.level)}`, color: "#0f172a" } : undefined}
                   >
                     {v}
