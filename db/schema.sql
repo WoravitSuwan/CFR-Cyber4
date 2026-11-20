@@ -60,3 +60,14 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS transactions_case_idx ON transactions (case_id, transfer_date, transfer_time);
 CREATE INDEX IF NOT EXISTS transactions_from_acct_idx ON transactions (from_account_no);
 CREATE INDEX IF NOT EXISTS transactions_to_acct_idx ON transactions (to_account_no);
+
+-- รูปแบบการส่งออกที่ผู้ใช้นำเข้า (ไฟล์ Excel ตัวอย่าง + ผลวิเคราะห์)
+CREATE TABLE IF NOT EXISTS export_templates (
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT        NOT NULL,
+  summary     TEXT,
+  spec        JSONB       NOT NULL,
+  file_name   TEXT,
+  file_data   BYTEA       NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

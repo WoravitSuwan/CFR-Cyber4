@@ -185,3 +185,56 @@ export async function deleteFile(caseId: number, fileId: number) {
   await sql`UPDATE cases SET updated_at = now() WHERE id = ${caseId}`;
   return res.length > 0;
 }
+
+// ---------------------------------------------------------------------------
+// รูปแบบการส่งออกที่ผู้ใช้นำเข้า
+// ---------------------------------------------------------------------------
+export interface TemplateRow {
+  id: number;
+  name: string;
+  summary: string | null;
+  spec: unknown;
+  file_name: string | null;
+  created_at: string;
+}
+
+export async function listTemplates(): Promise<TemplateRow[]> {
+  const sql = await db();
+  return (await sql`
+    SELECT id::float8 AS id, name, summary, spec, file_name, created_at
+    FROM export_templates ORDER BY id`) as unknown as TemplateRow[];
+}
+
+export async function getTemplate(id: number): Promise<(TemplateRow & { file_data: Buffer }) | null> {
+  const sql = await db();
+  const [r] = await sql`
+    SELECT id::float8 AS id, name, summary, spec, file_name, created_at, file_data
+    FROM export_templates WHERE id = ${id}`;
+  return (r as unknown as TemplateRow & { file_data: Buffer }) ?? null;
+}
+
+export async function createTemplate(t: { name: string; summary: string | null; spec: unknown; fileName: string | null; file: Buffer }) {
+  const sql = await db();
+  const [r] = await sql`
+    INSERT INTO export_templates (name, summary, spec, file_name, file_data)
+    VALUES (${t.name}, ${t.summary}, ${sql.json(t.spec as never)}, ${t.fileName}, ${t.file})
+    RETURNING id::float8 AS id, name, summary, spec, file_name, created_at`;
+  return r as unknown as TemplateRow;
+}
+
+export async function updateTemplate(id: number, patch: { name?: string; spec?: unknown }) {
+  const sql = await db();
+  const [r] = await sql`
+    UPDATE export_templates SET
+      name = COALESCE(${patch.name ?? null}, name),
+      spec = COALESCE(${patch.spec === undefined ? null : sql.json(patch.spec as never)}, spec)
+    WHERE id = ${id}
+    RETURNING id::float8 AS id, name, summary, spec, file_name, created_at`;
+  return (r as unknown as TemplateRow) ?? null;
+}
+
+export async function deleteTemplate(id: number) {
+  const sql = await db();
+  const res = await sql`DELETE FROM export_templates WHERE id = ${id} RETURNING id`;
+  return res.length > 0;
+}

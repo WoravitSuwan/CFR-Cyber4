@@ -1,5 +1,5 @@
 import { bankShort } from "../banks";
-import { maskAccount, type FlowResult } from "../flow";
+import { fromKey, maskAccount, toKey, type Chain, type FlowResult } from "../flow";
 import type { Tx } from "../types";
 
 /** สีพื้นของแต่ละชั้น (ตามธีมในไฟล์ตัวอย่าง 3.case) */
@@ -100,4 +100,50 @@ export function buildCaseGrid(
   });
 
   return { columns, rows, levels };
+}
+
+/**
+ * หาช่วงแถวที่ควรรวมเซลล์ (แนวตั้ง) ของบัญชีแต่ละชั้น:
+ * แถวติดกันที่มีเส้นทางบัญชีเหมือนกันตั้งแต่ต้นทางจนถึงชั้นนั้น จะถูกรวมเป็นเซลล์เดียว
+ * คืนค่า level → รายการช่วงแถว (index เริ่มที่ 0 ตามลำดับ chains)
+ */
+export function accountMerges(chains: Chain[]): Map<number, { r1: number; r2: number }[]> {
+  const keys = chains.map((c) => {
+    const m = new Map<number, string>();
+    let acc = `o${c.offset}`;
+    for (let i = 0; i <= c.hops.length; i++) {
+      acc += `|${i < c.hops.length ? fromKey(c.hops[i]) : toKey(c.hops[c.hops.length - 1])}`;
+      m.set(c.offset + i, acc);
+    }
+    return m;
+  });
+  const levels = new Set<number>();
+  keys.forEach((m) => m.forEach((_, lv) => levels.add(lv)));
+  const out = new Map<number, { r1: number; r2: number }[]>();
+  for (const lv of levels) {
+    const ranges: { r1: number; r2: number }[] = [];
+    let start = 0;
+    for (let r = 1; r <= keys.length; r++) {
+      const prev = keys[r - 1].get(lv);
+      const cur = r < keys.length ? keys[r].get(lv) : undefined;
+      if (prev === undefined || cur !== prev) {
+        if (prev !== undefined && r - 1 > start) ranges.push({ r1: start, r2: r - 1 });
+        start = r;
+      }
+    }
+    if (ranges.length) out.set(lv, ranges);
+  }
+  return out;
+}
+
+/** แผนที่ rowSpan สำหรับแสดงผล: `${row}:${level}` → span (0 = ถูกรวมเข้ากับแถวบน) */
+export function mergeSpans(chains: Chain[]): Map<string, number> {
+  const spans = new Map<string, number>();
+  accountMerges(chains).forEach((ranges, lv) => {
+    for (const { r1, r2 } of ranges) {
+      spans.set(`${r1}:${lv}`, r2 - r1 + 1);
+      for (let r = r1 + 1; r <= r2; r++) spans.set(`${r}:${lv}`, 0);
+    }
+  });
+  return spans;
 }

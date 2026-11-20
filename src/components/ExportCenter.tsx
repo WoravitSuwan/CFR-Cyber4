@@ -7,6 +7,7 @@ import { Archive, CheckCircle2, Download, FileSpreadsheet, FolderOpen, Loader2, 
 import type { CaseSummary } from "@/lib/types";
 import { ApiError, api, downloadBlob, exportCase, fmtBytes, fmtInt, fmtMoney, zipFiles, type ExportedFile } from "@/lib/client";
 import { templateMeta } from "@/lib/export/options";
+import { useCustomTemplates } from "./useCustomTemplates";
 import { DbNotice } from "./DbNotice";
 import { ExportOptionsPanel, useExportOptions } from "./ExportOptionsPanel";
 import { Badge, Button, Card, CardHeader, Empty, Progress, Spinner, cx, useToast } from "./ui";
@@ -17,6 +18,10 @@ export function ExportCenter() {
   const toast = useToast();
   const params = useSearchParams();
   const [opts, update] = useExportOptions();
+  const { list: customList } = useCustomTemplates();
+  const customTpl = customList.find((t) => `custom:${t.id}` === opts.template);
+  const tplName = customTpl ? customTpl.name : templateMeta(opts.template).name;
+  const tplShort = customTpl ? customTpl.name : templateMeta(opts.template).short;
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -78,7 +83,7 @@ export function ExportCenter() {
     try {
       const blob = await zipFiles(files);
       const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-      downloadBlob(blob, `cfr_export_${opts.template}_${files.length}files_${stamp}.zip`);
+      downloadBlob(blob, `cfr_export_${opts.template.replace(":", "-")}_${files.length}files_${stamp}.zip`);
     } finally {
       setZipping(false);
     }
@@ -170,7 +175,7 @@ export function ExportCenter() {
             </div>
             <div className="flex flex-col gap-3 border-t border-line bg-surface-2 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
               <div className="flex-1 text-[13px] text-ink-2">
-                จะสร้าง <b className="text-ink">{selected.length}</b> ไฟล์ รูปแบบ <b className="text-ink">{templateMeta(opts.template).name}</b>
+                จะสร้าง <b className="text-ink">{selected.length}</b> ไฟล์ รูปแบบ <b className="text-ink">{tplName}</b>
               </div>
               <Button variant="primary" size="lg" icon={<FileSpreadsheet className="size-5" />} loading={running} disabled={!selected.length} onClick={generate}>
                 สร้างไฟล์ Excel
@@ -249,7 +254,7 @@ export function ExportCenter() {
                       </div>
                     </div>
                     <Badge tone="primary" className="hidden sm:inline-flex">
-                      {templateMeta(opts.template).short}
+                      {tplShort}
                     </Badge>
                     <Button size="sm" icon={<Download className="size-4" />} disabled={j.status !== "done"} onClick={() => j.file && downloadBlob(j.file.blob, j.file.fileName)}>
                       ดาวน์โหลด

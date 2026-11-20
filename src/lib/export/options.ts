@@ -1,6 +1,11 @@
 import { DEFAULT_FLOW_OPTIONS, type FlowOptions } from "../flow";
 
 export type TemplateId = "case-flow" | "case-flow-detail" | "transactions" | "accounts" | "raw" | "full";
+/** รูปแบบมาตรฐาน หรือรูปแบบที่ผู้ใช้นำเข้า (custom:<id>) */
+export type TemplateKey = TemplateId | `custom:${number}`;
+
+export const isCustomTemplate = (k: TemplateKey): k is `custom:${number}` => k.startsWith("custom:");
+export const customTemplateId = (k: TemplateKey) => (isCustomTemplate(k) ? Number(k.slice(7)) : null);
 
 export interface TemplateMeta {
   id: TemplateId;
@@ -60,8 +65,10 @@ export const TEMPLATES: TemplateMeta[] = [
 export type Era = "BE" | "CE";
 
 export interface ExportOptions extends FlowOptions {
-  template: TemplateId;
+  template: TemplateKey;
   maskAccounts: boolean;
+  /** รวมเซลล์ธนาคาร/เลขบัญชีที่ซ้ำกันในแถวติดกัน (แนวตั้ง) */
+  mergeRepeated: boolean;
   era: Era;
   /** รูปแบบชื่อไฟล์ รองรับ {case} {index} {title} {template} {date} */
   fileNamePattern: string;
@@ -71,17 +78,20 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   ...DEFAULT_FLOW_OPTIONS,
   template: "case-flow",
   maskAccounts: true,
+  mergeRepeated: false,
   era: "BE",
   fileNamePattern: "3.case_{case}",
 };
 
-export function templateMeta(id: TemplateId): TemplateMeta {
+export function templateMeta(id: TemplateKey): TemplateMeta {
+  if (isCustomTemplate(id))
+    return { id: "case-flow", name: "รูปแบบที่นำเข้า", short: "custom", description: "", sheets: ["Sheet1"] };
   return TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];
 }
 
 export function buildFileName(
   pattern: string,
-  vars: { caseNo: string; index: number; title?: string | null; template: TemplateId },
+  vars: { caseNo: string; index: number; title?: string | null; template: TemplateKey },
 ): string {
   const today = new Date();
   const ymd = `${today.getFullYear() + 543}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;

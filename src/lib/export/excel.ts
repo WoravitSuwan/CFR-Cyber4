@@ -2,8 +2,8 @@ import ExcelJS from "exceljs";
 import { bankShort } from "../banks";
 import { analyzeFlow, maskAccount, sortTx, type FlowResult } from "../flow";
 import { CFR_FIELDS, DATE_FIELDS, type Tx } from "../types";
-import { buildCaseGrid, levelFill, levelStrong, type GridKind } from "./grid";
-import type { Era, ExportOptions } from "./options";
+import { accountMerges, buildCaseGrid, levelFill, levelStrong, type CaseGrid, type GridKind } from "./grid";
+import type { Era, ExportOptions, TemplateId } from "./options";
 
 export interface ExportCase {
   caseNo: string;
@@ -24,7 +24,7 @@ const SOFT: Partial<ExcelJS.Borders> = { top: HAIR, left: HAIR, bottom: HAIR, ri
 const fill = (hex: string): ExcelJS.Fill => ({ type: "pattern", pattern: "solid", fgColor: { argb: `FF${hex}` } });
 
 /** วันที่ 'YYYY-MM-DD' (ค.ศ.) → Date สำหรับ Excel (ปี พ.ศ. ถ้าเลือก BE เหมือนไฟล์ตัวอย่าง) */
-function excelDate(ymd: string | null, era: Era): Date | null {
+export function excelDate(ymd: string | null, era: Era): Date | null {
   if (!ymd) return null;
   const [y, m, d] = ymd.split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -32,22 +32,36 @@ function excelDate(ymd: string | null, era: Era): Date | null {
 }
 
 /** เวลา 'HH:MM:SS' → เศษส่วนของวัน */
-function excelTime(hms: string | null): number | null {
+export function excelTime(hms: string | null): number | null {
   if (!hms) return null;
   const [h, m, s] = hms.split(":").map(Number);
   return (h * 3600 + m * 60 + (s || 0)) / 86400;
 }
 
-const textDate = (ymd: string | null, era: Era) => {
+export const textDate = (ymd: string | null, era: Era) => {
   if (!ymd) return null;
   const [y, m, d] = ymd.split("-");
   return `${era === "BE" ? Number(y) + 543 : y}-${m}-${d}`;
 };
 
-const amountFmt = (v: number | null) => (v !== null && !Number.isInteger(v) ? "#,##0.00" : "#,##0");
+export const amountFmt = (v: number | null) => (v !== null && !Number.isInteger(v) ? "#,##0.00" : "#,##0");
 
 function thaiDateTime(d = new Date()) {
   return d.toLocaleString("th-TH", { dateStyle: "long", timeStyle: "short" });
+}
+
+/** รวมเซลล์บัญชี (ธนาคาร/เลขบัญชี/ชื่อ) ที่ซ้ำกันในแถวติดกัน */
+export function applyAccountMerges(ws: ExcelJS.Worksheet, grid: CaseGrid, flow: FlowResult, firstRow: number, firstCol = 1) {
+  const merges = accountMerges(flow.chains);
+  grid.columns.forEach((col, i) => {
+    if (col.kind !== "bank" && col.kind !== "account" && col.kind !== "name") return;
+    for (const { r1, r2 } of merges.get(col.level) ?? []) {
+      const c = firstCol + i;
+      ws.mergeCells(firstRow + r1, c, firstRow + r2, c);
+      const master = ws.getCell(firstRow + r1, c);
+      master.alignment = { ...(master.alignment ?? {}), horizontal: master.alignment?.horizontal ?? "center", vertical: "middle" };
+    }
+  });
 }
 
 const ROLE_TH = { source: "บัญชีต้นทาง (ผู้เสียหาย)", mule: "บัญชีทอด", sink: "บัญชีปลายทาง" } as const;
@@ -116,6 +130,7 @@ function sheetCaseFlow(wb: ExcelJS.Workbook, c: ExportCase, flow: FlowResult, o:
       }
     });
   });
+  if (o.mergeRepeated) applyAccountMerges(ws, grid, flow, 4);
   return ws;
 }
 
@@ -204,6 +219,7 @@ function sheetCaseFlowDetail(wb: ExcelJS.Workbook, c: ExportCase, flow: FlowResu
       }
     });
   });
+  if (o.mergeRepeated) applyAccountMerges(ws, grid, flow, 6);
   const note = ws.getCell(6 + grid.rows.length + 1, 1);
   note.value =
     "หมายเหตุ: แถวตัวเอียงสีเทาคือธุรกรรมที่ไม่สามารถเชื่อมโยงกับบัญชีต้นทางได้โดยตรง แสดงเริ่มที่ชั้นของบัญชีผู้โอน";
@@ -447,13 +463,14 @@ function sheetRaw(wb: ExcelJS.Workbook, c: ExportCase, _flow: FlowResult, o: Exp
 
 /** สร้างไฟล์ Excel ของหนึ่งคดีตามรูปแบบที่เลือก */
 export async function buildWorkbook(c: ExportCase, o: ExportOptions): Promise<ArrayBuffer> {
+  if (o.template.startsWith("custom:")) throw new Error("รูปแบบที่นำเข้าต้องใช้ buildCustomWorkbook");
   const wb = new ExcelJS.Workbook();
   wb.creator = "CFR Money Trail";
   wb.created = new Date();
   wb.title = `case ${c.caseNo}`;
   const flow = analyzeFlow(c.txs, o);
 
-  switch (o.template) {
+  switch (o.template as TemplateId) {
     case "case-flow":
       sheetCaseFlow(wb, c, flow, o);
       break;

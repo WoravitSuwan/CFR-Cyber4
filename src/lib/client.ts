@@ -2,7 +2,8 @@
 
 import type { CaseSummary, ImportMode, Tx } from "./types";
 import type { ParsedFile } from "./import/parse";
-import { buildFileName, type ExportOptions } from "./export/options";
+import { buildFileName, customTemplateId, type ExportOptions } from "./export/options";
+import type { CustomSpec } from "./export/custom";
 
 export class ApiError extends Error {
   constructor(
@@ -104,14 +105,77 @@ const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 /** สร้างไฟล์ Excel ของหนึ่งคดีบนเบราว์เซอร์ */
 export async function exportCase(c: Pick<CaseSummary, "id" | "case_no" | "title">, opts: ExportOptions, index: number, txs?: Tx[]): Promise<ExportedFile> {
-  const [{ buildWorkbook }, rows] = await Promise.all([import("./export/excel"), txs ? Promise.resolve(txs) : fetchAllTransactions(c.id)]);
-  const buf = await buildWorkbook({ caseNo: c.case_no, title: c.title, txs: rows }, opts);
+  const rowsP = txs ? Promise.resolve(txs) : fetchAllTransactions(c.id);
+  const customId = customTemplateId(opts.template);
+  let buf: ArrayBuffer;
+  if (customId !== null) {
+    const [{ buildCustomWorkbook }, tpl, rows] = await Promise.all([import("./export/custom"), loadTemplateFile(customId), rowsP]);
+    buf = await buildCustomWorkbook(tpl.file, tpl.template.spec, { caseNo: c.case_no, title: c.title, txs: rows }, opts);
+  } else {
+    const [{ buildWorkbook }, rows] = await Promise.all([import("./export/excel"), rowsP]);
+    buf = await buildWorkbook({ caseNo: c.case_no, title: c.title, txs: rows }, opts);
+  }
   return {
     caseId: c.id,
     caseNo: c.case_no,
     fileName: buildFileName(opts.fileNamePattern, { caseNo: c.case_no, index, title: c.title, template: opts.template }),
     blob: new Blob([buf], { type: XLSX_MIME }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// รูปแบบที่ผู้ใช้นำเข้า
+// ---------------------------------------------------------------------------
+export interface CustomTemplate {
+  id: number;
+  name: string;
+  summary: string | null;
+  spec: CustomSpec;
+  file_name: string | null;
+  created_at: string;
+}
+
+const fileCache = new Map<number, Promise<{ template: CustomTemplate; file: ArrayBuffer }>>();
+
+function b64ToBuf(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+function bufToB64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+export function loadTemplateFile(id: number) {
+  if (!fileCache.has(id)) {
+    const p = api<{ template: CustomTemplate; fileBase64: string }>(`/api/templates/${id}`).then((r) => ({ template: r.template, file: b64ToBuf(r.fileBase64) }));
+    p.catch(() => fileCache.delete(id));
+    fileCache.set(id, p);
+  }
+  return fileCache.get(id)!;
+}
+
+export async function saveTemplate(input: { name: string; summary: string; spec: CustomSpec; fileName: string; file: ArrayBuffer }) {
+  const r = await api<{ template: CustomTemplate }>("/api/templates", {
+    method: "POST",
+    body: JSON.stringify({ name: input.name, summary: input.summary, spec: input.spec, fileName: input.fileName, fileBase64: bufToB64(input.file) }),
+  });
+  return r.template;
+}
+
+export async function updateTemplateSpec(id: number, patch: { name?: string; spec?: CustomSpec }) {
+  fileCache.delete(id);
+  return (await api<{ template: CustomTemplate }>(`/api/templates/${id}`, { method: "PATCH", body: JSON.stringify(patch) })).template;
+}
+
+export async function deleteTemplate(id: number) {
+  fileCache.delete(id);
+  await api(`/api/templates/${id}`, { method: "DELETE" });
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

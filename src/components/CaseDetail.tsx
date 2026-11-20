@@ -27,7 +27,8 @@ import {
 import type { CaseFile, CaseSummary, Tx } from "@/lib/types";
 import { analyzeFlow, maskAccount, sortTx } from "@/lib/flow";
 import { bankColor, bankShort } from "@/lib/banks";
-import { TEMPLATES, type TemplateId } from "@/lib/export/options";
+import { TEMPLATES, type TemplateKey } from "@/lib/export/options";
+import { useCustomTemplates } from "./useCustomTemplates";
 import { api, downloadBlob, exportCase, fetchAllTransactions, fmtDate, fmtDateTime, fmtInt, fmtMoney, fmtTime } from "@/lib/client";
 import { CaseGridPreview } from "./CaseGridPreview";
 import { ExportOptionsPanel, useExportOptions } from "./ExportOptionsPanel";
@@ -48,6 +49,7 @@ export function CaseDetail({ id }: { id: number }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("graph");
   const [opts, update] = useExportOptions();
+  const { list: customList } = useCustomTemplates();
   const [showOpts, setShowOpts] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -86,7 +88,7 @@ export function CaseDetail({ id }: { id: number }) {
     );
   }, [txs, txQuery]);
 
-  async function doExport(template?: TemplateId) {
+  async function doExport(template?: TemplateKey) {
     if (!detail || !txs) return;
     setExporting(true);
     try {
@@ -219,15 +221,30 @@ export function CaseDetail({ id }: { id: number }) {
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={opts.template}
-            onChange={(e) => update({ template: e.target.value as TemplateId })}
+            onChange={(e) => {
+              const v = e.target.value as TemplateKey;
+              const ct = customList.find((t) => `custom:${t.id}` === v);
+              update({ template: v, ...(ct?.spec.mode === "flow" ? { mergeRepeated: ct.spec.mergeRepeated } : {}) });
+            }}
             className="h-10 rounded-xl border border-line bg-surface px-3 text-sm outline-none focus:border-primary"
             aria-label="รูปแบบไฟล์"
           >
-            {TEMPLATES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
+            <optgroup label="รูปแบบมาตรฐาน">
+              {TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+            {customList.length > 0 && (
+              <optgroup label="รูปแบบของฉัน">
+                {customList.map((t) => (
+                  <option key={t.id} value={`custom:${t.id}`}>
+                    {t.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <Button icon={<Settings2 className="size-4" />} onClick={() => setShowOpts((s) => !s)} variant={showOpts ? "soft" : "secondary"}>
             ตัวเลือก
@@ -323,7 +340,7 @@ export function CaseDetail({ id }: { id: number }) {
                   ดาวน์โหลดแบบนี้
                 </Button>
               </div>
-              <CaseGridPreview flow={flow} caseNo={detail.case_no} mask={mask} era={opts.era} />
+              <CaseGridPreview flow={flow} caseNo={detail.case_no} mask={mask} era={opts.era} merge={opts.mergeRepeated} />
             </div>
           )}
 

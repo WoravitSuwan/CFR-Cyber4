@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Check, FileSpreadsheet, GitBranch, Layers, ListOrdered, Sheet, Table2, Users } from "lucide-react";
-import { buildFileName, DEFAULT_EXPORT_OPTIONS, TEMPLATES, type ExportOptions, type TemplateId } from "@/lib/export/options";
+import { buildFileName, DEFAULT_EXPORT_OPTIONS, isCustomTemplate, TEMPLATES, type ExportOptions, type TemplateId } from "@/lib/export/options";
+import { CustomTemplates } from "./CustomTemplates";
+import { useCustomTemplates } from "./useCustomTemplates";
 import type { LinkStrategy } from "@/lib/flow";
 import { Segmented, Toggle, cx } from "./ui";
 
@@ -104,7 +106,11 @@ export function ExportOptionsPanel({
   sampleCaseNo?: string;
   compact?: boolean;
 }) {
-  const usesFlow = opts.template === "case-flow" || opts.template === "case-flow-detail" || opts.template === "full";
+  const { list: customList } = useCustomTemplates();
+  const custom = isCustomTemplate(opts.template) ? customList.find((t) => `custom:${t.id}` === opts.template) : undefined;
+  const usesFlow =
+    opts.template === "case-flow" || opts.template === "case-flow-detail" || opts.template === "full" || custom?.spec.mode === "flow";
+  const canMerge = opts.template === "case-flow" || opts.template === "case-flow-detail" || opts.template === "full" || custom?.spec.mode === "flow";
   return (
     <div className="space-y-6">
       <div>
@@ -147,6 +153,7 @@ export function ExportOptionsPanel({
             );
           })}
         </div>
+        <CustomTemplates opts={opts} update={update} />
       </div>
 
       <div className={cx("grid gap-6", !compact && "lg:grid-cols-2")}>
@@ -172,6 +179,14 @@ export function ExportOptionsPanel({
             label="ปิดบังเลขบัญชีบางส่วน"
             hint="เช่น 4390712341 → 43907xxxx1 (ตามไฟล์ตัวอย่าง)"
           />
+          <div className={cx(!canMerge && "pointer-events-none opacity-50")}>
+            <Toggle
+              checked={opts.mergeRepeated}
+              onChange={(mergeRepeated) => update({ mergeRepeated })}
+              label="รวมเซลล์บัญชีที่ซ้ำกัน"
+              hint="ธนาคาร/เลขบัญชีที่เหมือนกันในแถวติดกันจะรวมเป็นเซลล์เดียว (ใช้กับรูปแบบเส้นทางเงิน)"
+            />
+          </div>
           <label className="block rounded-xl p-2">
             <div className="text-sm font-medium text-ink">รูปแบบชื่อไฟล์</div>
             <div className="mb-2 text-[12px] text-ink-2">
