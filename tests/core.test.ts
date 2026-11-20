@@ -147,3 +147,13 @@ test("buildFileName", () => {
 test("schema.ts ตรงกับ db/schema.sql", () => {
   assert.equal(SCHEMA_SQL, readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8"));
 });
+
+test("pgConnection เปิด SSL สำหรับ Neon และตัดพารามิเตอร์ที่ไม่รองรับ", async () => {
+  const { pgConnection } = await import("../src/lib/pg-options");
+  const neon = pgConnection("postgresql://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
+  assert.equal(neon.ssl, "require");
+  assert.equal(neon.url, "postgresql://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/neondb");
+  assert.equal(pgConnection("postgres://u:p@db.example.com/x").ssl, "require");
+  assert.equal(pgConnection("postgres://u:p@localhost:5432/x").ssl, false);
+  assert.equal(pgConnection("postgres://u:p@db.example.com/x?sslmode=disable").ssl, false);
+});

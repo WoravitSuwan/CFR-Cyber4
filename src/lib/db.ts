@@ -1,5 +1,6 @@
 import "server-only";
 import postgres from "postgres";
+import { pgConnection } from "./pg-options";
 import { SCHEMA_SQL } from "./schema";
 
 type Sql = ReturnType<typeof postgres>;
@@ -25,14 +26,13 @@ export class DbConfigError extends Error {
 function createClient(): Sql {
   const url = databaseUrl();
   if (!url) throw new DbConfigError();
-  const local = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url);
-  const hasSslMode = /[?&]sslmode=/.test(url);
-  return postgres(url, {
+  const conn = pgConnection(url);
+  return postgres(conn.url, {
     max: process.env.VERCEL ? 1 : 5,
     idle_timeout: 20,
     connect_timeout: 15,
     prepare: false, // รองรับ connection pooler (Neon / Supabase / PgBouncer)
-    ssl: hasSslMode ? undefined : local ? false : "require",
+    ssl: conn.ssl,
     onnotice: () => {},
   });
 }
