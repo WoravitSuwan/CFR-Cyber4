@@ -1,1 +1,90 @@
-# CFR-Cyber4
+# CFR Money Trail — ระบบนำเข้าและส่งออกเส้นทางเงิน CFR
+
+ระบบเว็บสำหรับนำเข้า **ไฟล์ข้อมูลดิบเส้นทางการเงินจาก CFR (Central Fraud Registry)** วิเคราะห์ความเชื่อมโยงของบัญชีเป็นทอดๆ
+แล้วส่งออกเป็นไฟล์ Excel ตามรูปแบบที่ต้องการ (เช่น รูปแบบ `3.case_<เลขคดี>.xlsx`)
+
+สร้างด้วย **Next.js 15 + TypeScript + Tailwind CSS 4 + PostgreSQL** พร้อม deploy บน **Vercel**
+
+## ความสามารถ
+
+| | |
+|---|---|
+| 📥 **นำเข้าหลายไฟล์** | ลากวาง `.xlsx` / `.csv` หรือ `.zip` ที่รวมหลายไฟล์ (รองรับ ZIP ซ้อน ZIP) ไฟล์ถูกอ่านบนเบราว์เซอร์ จึงไม่ติดข้อจำกัดขนาด upload 4.5 MB ของ Vercel |
+| 🔢 **ดึงเลขคดีอัตโนมัติ** | จากชื่อไฟล์/โฟลเดอร์ เช่น `case_150225671/…` → `150225671` แก้ไขได้ก่อนนำเข้า ไฟล์ที่มีเลขคดีเดียวกันจะถูกรวมเป็นคดีเดียว |
+| ♻️ **กันข้อมูลซ้ำ** | ทุกแถวมี `row_hash` นำเข้าซ้ำได้โดยข้ามรายการเดิมอัตโนมัติ เลือกได้ว่าจะ *เพิ่มเข้าคดีเดิม / แทนที่ / สร้างคดีใหม่* |
+| 🧭 **วิเคราะห์เส้นทางเงิน** | หาบัญชีต้นทาง (ผู้เสียหาย) → บัญชีทอด → ปลายทาง แสดงเป็นแผนภาพแบ่งชั้น ความหนาของเส้นตามยอดเงิน |
+| 📊 **ส่งออก Excel 6 รูปแบบ** | เส้นทางเงิน (แบบ 3.case) · เส้นทางเงินแบบละเอียด · รายการธุรกรรม · สรุปบัญชี · ข้อมูลดิบ CFR · รายงานฉบับเต็ม (หลายชีต) |
+| 📦 **แยกไฟล์รายคดี** | สร้างไฟล์แยกทีละคดี เลือกดาวน์โหลดทีละไฟล์ เลือกบางไฟล์เป็น ZIP หรือดาวน์โหลดทั้งหมดเป็น ZIP |
+| ⚙️ **ตัวเลือก** | ปี พ.ศ./ค.ศ. · ปิดบังเลขบัญชี (`43907xxxx1`) · วิธีเชื่อมเส้นทาง (ตามเวลา / ยอดใกล้เคียง / ทุกเส้นทาง) · จำนวนทอดสูงสุด · รูปแบบชื่อไฟล์ `{case}` `{index}` `{title}` `{template}` `{date}` |
+| 🔒 **รหัสผ่าน (ไม่บังคับ)** | ตั้ง `APP_PASSWORD` เพื่อบังคับเข้าสู่ระบบก่อนใช้งาน |
+
+## รูปแบบไฟล์
+
+**นำเข้า** — ไฟล์ข้อมูลดิบ CFR ที่มีหัวคอลัมน์ (ค้นหาหัวตารางใน 15 แถวแรกอัตโนมัติ):
+
+```
+response_id, bank_case_id, timestamp_insert, from_bank_code, from_bank_short_name, from_account_no,
+from_account_name, to_bank_code, to_bank_short_name, to_bank_branch, to_id_type, to_id, first_name,
+last_name, phone_number, promptpay_type, promptpay_id, to_account_no, to_account_name, to_account_status,
+to_open_date, to_close_date, to_balance, transfer_date, transfer_channel, transfer_channel_detail,
+transfer_time, transfer_amount, transfer_description, transfer_ref
+```
+
+วันที่รองรับทั้ง พ.ศ. (`2567-02-27`, `27/02/2567`) และ ค.ศ. และค่าวันที่ของ Excel
+
+**ส่งออกแบบ 3.case** — แต่ละแถวคือหนึ่งเส้นทางเงิน:
+
+```
+        case 150225671
+Bank | on Bank     | transfer_date | transfer_time | transfer_amount | Bank(1) | on Bank(1) | ... | Bank(n) | on Bank(n)
+GSB  | 203000xxxx0 | 15/02/2567    | 9:35          | 800             | SCB     | 43907xxxx1 | ... | KKP     | 10000xxxx8
+```
+
+สีพื้นแต่ละชั้น ฟอนต์ Tahoma และรูปแบบตัวเลข/วันที่ตรงกับไฟล์ตัวอย่าง
+การเชื่อมทอด (ค่าเริ่มต้น): เงินที่เข้าบัญชีจะจับคู่กับรายการโอนออกถัดไปของบัญชีนั้นตามลำดับเวลา (แต่ละรายการใช้ได้ครั้งเดียว)
+
+## Deploy บน Vercel
+
+1. Import repository นี้ใน Vercel (Framework: Next.js — ไม่ต้องตั้งค่าเพิ่ม)
+2. เพิ่มฐานข้อมูล: **Storage → Create Database → Neon (Postgres)** แล้ว Connect กับโปรเจกต์
+   ระบบจะได้ตัวแปร `POSTGRES_URL` / `DATABASE_URL` อัตโนมัติ (หรือใช้ PostgreSQL อื่น เช่น Supabase ก็ได้ โดยตั้ง `DATABASE_URL` เอง)
+3. (ไม่บังคับ) ตั้ง `APP_PASSWORD` เพื่อป้องกันการเข้าถึง และ `AUTH_SECRET` เป็นค่าสุ่ม
+4. Deploy — ตารางจะถูกสร้างให้อัตโนมัติเมื่อเรียกใช้งานครั้งแรก (หรือรัน `npm run db:migrate`)
+
+| ตัวแปร | ความหมาย |
+|---|---|
+| `DATABASE_URL` หรือ `POSTGRES_URL` | PostgreSQL connection string (บังคับ) |
+| `APP_PASSWORD` | รหัสผ่านเข้าใช้งานระบบ (ไม่บังคับ) |
+| `AUTH_SECRET` | ค่าลับสำหรับ session cookie (ไม่บังคับ) |
+
+## พัฒนาในเครื่อง
+
+```bash
+cp .env.example .env.local      # แก้ DATABASE_URL ให้ชี้ไปที่ PostgreSQL ของคุณ
+npm install
+npm run db:migrate              # (ไม่บังคับ) สร้างตาราง
+npm run dev                     # http://localhost:3000
+```
+
+```bash
+npm run typecheck && npm test   # ตรวจชนิดข้อมูลและรันชุดทดสอบ
+```
+
+## โครงสร้าง
+
+```
+db/schema.sql                 โครงสร้างตาราง PostgreSQL (cases, case_files, transactions)
+src/lib/normalize.ts          แปลงหัวคอลัมน์/วันที่ พ.ศ./เวลา/ตัวเลข ให้เป็นมาตรฐาน
+src/lib/import/parse.ts       อ่าน xlsx/csv/zip บนเบราว์เซอร์
+src/lib/flow.ts               วิเคราะห์เส้นทางเงิน (ชั้นบัญชี, เส้นทาง, บทบาทบัญชี)
+src/lib/export/excel.ts       สร้างไฟล์ Excel ทุกรูปแบบ (ExcelJS)
+src/lib/repo.ts               คำสั่ง SQL
+src/app/api/*                 REST API (cases, import, transactions, stats, health, auth)
+src/components/*              หน้าจอ: นำเข้า, รายการคดี, รายละเอียดคดี, แผนภาพ, ส่งออก
+```
+
+## ความปลอดภัยของข้อมูล
+
+- ไฟล์ถูกอ่านบนเบราว์เซอร์ ส่งเฉพาะข้อมูลธุรกรรมที่ทำความสะอาดแล้วเข้าฐานข้อมูล
+- ไฟล์ Excel ที่ส่งออกสร้างบนเบราว์เซอร์ ไม่ถูกเก็บไว้บนเซิร์ฟเวอร์
+- ข้อมูลส่วนบุคคล (ชื่อ เลขบัตรประชาชน) เก็บในฐานข้อมูลของหน่วยงานเท่านั้น ควรตั้ง `APP_PASSWORD` เสมอเมื่อ deploy จริง
